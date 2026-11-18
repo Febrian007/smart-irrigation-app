@@ -308,18 +308,41 @@ class _DashboardHeader extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(color: Colors.white38, width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.14),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.asset(
+                    'assets/icon/app_icon.png',
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 11),
               const Expanded(
                 child: Text(
                   'Smart Irrigation Monitor',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 22,
+                    fontSize: 21,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.3,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
