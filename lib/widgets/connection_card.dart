@@ -2,20 +2,24 @@ import 'package:material_ui/material_ui.dart';
 
 import '../models/irrigation_state.dart';
 import '../theme/app_palette.dart';
+import 'ui_kit.dart';
 
-(Color bg, Color fg) connectionBadgeColors(ConnectionHealth health) {
+Color connectionColor(ConnectionHealth health) {
   switch (health) {
     case ConnectionHealth.connected:
-      return (AppPalette.mintSoft, AppPalette.mint);
+      return AppPalette.mint;
     case ConnectionHealth.connecting:
     case ConnectionHealth.disconnected:
-      return (AppPalette.amberSoft, AppPalette.amber);
+      return AppPalette.amber;
     case ConnectionHealth.reconnecting:
-      return (AppPalette.coralSoft, AppPalette.coral);
+      return AppPalette.coral;
     case ConnectionHealth.simulation:
-      return (AppPalette.primarySoft, AppPalette.primary);
+      return AppPalette.primary;
   }
 }
+
+bool _isBusy(ConnectionHealth h) =>
+    h == ConnectionHealth.connecting || h == ConnectionHealth.reconnecting;
 
 class CompactConnectionBar extends StatelessWidget {
   final String endpoint;
@@ -37,105 +41,52 @@ class CompactConnectionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (badgeBg, badgeFg) = connectionBadgeColors(health);
+    final color = connectionColor(health);
     final isFirebase = mode == ConnectionMode.firebase;
     final shortEndpoint = endpoint.replaceFirst(RegExp(r'^https?://'), '');
+    final busy = _isBusy(health);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppPalette.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppPalette.border),
-        boxShadow: [
-          BoxShadow(
-            color: AppPalette.primary.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      radius: 20,
       child: Row(
         children: [
-          InkWell(
-            onTap: onEditTap,
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: AppPalette.primarySoft,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                isFirebase ? Icons.cloud_outlined : Icons.lan_outlined,
-                color: AppPalette.primary,
-                size: 18,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
           Expanded(
-            child: InkWell(
+            child: Pressable(
               onTap: onEditTap,
-              borderRadius: BorderRadius.circular(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: badgeBg,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 5,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                color: badgeFg,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              statusLabel,
-                              style: TextStyle(
-                                color: badgeFg,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '· Ubah',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppPalette.primary,
-                        ),
-                      ),
-                    ],
+                  IconBadge(
+                    icon: isFirebase
+                        ? Icons.cloud_outlined
+                        : Icons.lan_outlined,
+                    color: color,
+                    size: 44,
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    shortEndpoint.isEmpty ? 'Ketuk untuk atur alamat' : shortEndpoint,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppPalette.textPrimary,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        StatusPill(
+                          label: statusLabel,
+                          color: color,
+                          pulse: health != ConnectionHealth.disconnected,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          shortEndpoint.isEmpty
+                              ? 'Ketuk untuk atur alamat'
+                              : '$shortEndpoint · Ubah',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppPalette.textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -144,19 +95,22 @@ class CompactConnectionBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           FilledButton(
-            onPressed: onConnect,
+            onPressed: busy ? null : onConnect,
             style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              minimumSize: const Size(96, 44),
+              disabledBackgroundColor: AppPalette.surfaceHigh,
             ),
-            child: const Text(
-              'Connect',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-            ),
+            child: busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      color: AppPalette.textPrimary,
+                    ),
+                  )
+                : const Text('Connect'),
           ),
         ],
       ),
@@ -185,7 +139,7 @@ class ConnectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isFirebase = mode == ConnectionMode.firebase;
-    final (badgeBg, badgeFg) = connectionBadgeColors(health);
+    final color = connectionColor(health);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -193,67 +147,37 @@ class ConnectionCard extends StatelessWidget {
       children: [
         Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: AppPalette.primarySoft,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.wifi_tethering_rounded,
-                color: AppPalette.primary,
-                size: 18,
-              ),
+            const IconBadge(
+              icon: Icons.wifi_tethering_rounded,
+              color: AppPalette.primary,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             const Expanded(
               child: Text(
-                'Pengaturan Koneksi',
+                'Koneksi Sistem',
                 style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 17,
                   color: AppPalette.textPrimary,
+                  letterSpacing: -0.2,
                 ),
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: badgeBg,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: badgeFg,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    statusLabel,
-                    style: TextStyle(
-                      color: badgeFg,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
+            Flexible(
+              child: StatusPill(
+                label: statusLabel,
+                color: color,
+                pulse: health != ConnectionHealth.disconnected,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
             color: AppPalette.background,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppPalette.border),
           ),
           child: Row(
@@ -269,7 +193,7 @@ class ConnectionCard extends StatelessWidget {
               const SizedBox(width: 4),
               Expanded(
                 child: _ModeTab(
-                  label: 'Firebase RTDB',
+                  label: 'Jarak Jauh (Firebase)',
                   icon: Icons.cloud_outlined,
                   selected: isFirebase,
                   onTap: () => onModeChanged(ConnectionMode.firebase),
@@ -278,33 +202,32 @@ class ConnectionCard extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         TextField(
           controller: ipController,
-          style: const TextStyle(
-            fontSize: 13,
-            color: AppPalette.textPrimary,
-          ),
+          keyboardType: TextInputType.url,
+          autocorrect: false,
+          style: const TextStyle(fontSize: 14, color: AppPalette.textPrimary),
           decoration: InputDecoration(
             labelText: isFirebase ? 'URL Firebase RTDB' : 'Alamat IP ESP32',
             labelStyle: const TextStyle(
-              fontSize: 12,
+              fontSize: 13,
               color: AppPalette.textSecondary,
             ),
             hintText: isFirebase
                 ? 'https://xxx-default-rtdb.asia-southeast1.firebasedatabase.app'
                 : 'http://192.168.137.10',
-            isDense: true,
+            hintStyle: const TextStyle(color: AppPalette.textMuted),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
             onPressed: onConnect,
             icon: Icon(
-              isFirebase ? Icons.cloud_done_outlined : Icons.wifi,
-              size: 17,
+              isFirebase ? Icons.cloud_done_outlined : Icons.wifi_rounded,
+              size: 18,
             ),
             label: const Text('Hubungkan Sekarang'),
           ),
@@ -329,32 +252,31 @@ class _ModeTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final fg = selected ? AppPalette.onAccent : AppPalette.textSecondary;
+    return Pressable(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 10),
+        duration: const Duration(milliseconds: 200),
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           color: selected ? AppPalette.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              size: 15,
-              color: selected ? Colors.white : AppPalette.textSecondary,
-            ),
+            Icon(icon, size: 16, color: fg),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
                 label,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: selected ? Colors.white : AppPalette.textSecondary,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: fg,
                 ),
               ),
             ),
