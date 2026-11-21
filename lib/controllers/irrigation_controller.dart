@@ -20,7 +20,7 @@ class IrrigationController extends ChangeNotifier {
   bool _disposed = false;
 
   IrrigationController({Esp32SseService? service})
-      : _service = service ?? Esp32SseService();
+    : _service = service ?? Esp32SseService();
 
   void _update(IrrigationState next) {
     if (_disposed) return;
@@ -32,11 +32,13 @@ class IrrigationController extends ChangeNotifier {
     if (_state.connectionMode == mode) return;
     _reconnectTimer?.cancel();
     _service.disconnect();
-    _update(_state.copyWith(
-      connectionMode: mode,
-      connectionHealth: ConnectionHealth.disconnected,
-      connectionLabel: 'Belum Terhubung',
-    ));
+    _update(
+      _state.copyWith(
+        connectionMode: mode,
+        connectionHealth: ConnectionHealth.disconnected,
+        connectionLabel: 'Belum Terhubung',
+      ),
+    );
   }
 
   Future<void> connect(String baseUrl) async {
@@ -47,19 +49,27 @@ class IrrigationController extends ChangeNotifier {
     _reconnectTimer?.cancel();
 
     final isFirebase = _state.connectionMode == ConnectionMode.firebase;
-    _update(_state.copyWith(
-      connectionHealth: ConnectionHealth.connecting,
-      connectionLabel: isFirebase ? 'Menghubungkan Firebase...' : 'Menghubungkan SSE...',
-    ));
+    _update(
+      _state.copyWith(
+        connectionHealth: ConnectionHealth.connecting,
+        connectionLabel: isFirebase
+            ? 'Menghubungkan Firebase...'
+            : 'Menghubungkan SSE...',
+      ),
+    );
 
     await _service.connect(
       baseUrl: _currentBaseUrl,
       isFirebase: isFirebase,
       onOpen: () {
-        _update(_state.copyWith(
-          connectionHealth: ConnectionHealth.connected,
-          connectionLabel: isFirebase ? 'Terhubung (Firebase)' : 'Terhubung (SSE Live)',
-        ));
+        _update(
+          _state.copyWith(
+            connectionHealth: ConnectionHealth.connected,
+            connectionLabel: isFirebase
+                ? 'Terhubung (Firebase)'
+                : 'Terhubung (SSE Live)',
+          ),
+        );
       },
       onEvent: _handleSseEvent,
       onDisconnected: _scheduleReconnect,
@@ -69,10 +79,12 @@ class IrrigationController extends ChangeNotifier {
   void _scheduleReconnect() {
     if (_disposed || _state.isSimulation) return;
     _service.disconnect();
-    _update(_state.copyWith(
-      connectionHealth: ConnectionHealth.reconnecting,
-      connectionLabel: 'Putus • Menyambung ulang...',
-    ));
+    _update(
+      _state.copyWith(
+        connectionHealth: ConnectionHealth.reconnecting,
+        connectionLabel: 'Putus • Menyambung ulang...',
+      ),
+    );
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 4), () {
       if (!_disposed && !_state.isSimulation) {
@@ -84,24 +96,32 @@ class IrrigationController extends ChangeNotifier {
   void _handleSseEvent(SseEvent event) {
     switch (event.name) {
       case 'temperature':
-        _update(_state.copyWith(
-          temperature: double.tryParse(event.data) ?? _state.temperature,
-        ));
+        _update(
+          _state.copyWith(
+            temperature: double.tryParse(event.data) ?? _state.temperature,
+          ),
+        );
         break;
       case 'humidity':
-        _update(_state.copyWith(
-          humidity: double.tryParse(event.data) ?? _state.humidity,
-        ));
+        _update(
+          _state.copyWith(
+            humidity: double.tryParse(event.data) ?? _state.humidity,
+          ),
+        );
         break;
       case 'soil_moisture':
-        _update(_state.copyWith(
-          soilMoisture: double.tryParse(event.data) ?? _state.soilMoisture,
-        ));
+        _update(
+          _state.copyWith(
+            soilMoisture: double.tryParse(event.data) ?? _state.soilMoisture,
+          ),
+        );
         break;
       case 'water_level':
-        _update(_state.copyWith(
-          waterLevel: double.tryParse(event.data) ?? _state.waterLevel,
-        ));
+        _update(
+          _state.copyWith(
+            waterLevel: double.tryParse(event.data) ?? _state.waterLevel,
+          ),
+        );
         break;
       case 'status':
         try {
@@ -127,7 +147,10 @@ class IrrigationController extends ChangeNotifier {
       if (path == '/') {
         var next = _state;
         if (data['live'] is Map<String, dynamic>) {
-          next = next.mergeFromJson(data['live'] as Map<String, dynamic>, addLog: true);
+          next = next.mergeFromJson(
+            data['live'] as Map<String, dynamic>,
+            addLog: true,
+          );
         }
         if (data['control'] is Map<String, dynamic>) {
           next = next.mergeFromJson(data['control'] as Map<String, dynamic>);
@@ -144,27 +167,31 @@ class IrrigationController extends ChangeNotifier {
   void toggleSimulation(bool enable) {
     _demoTimer?.cancel();
     if (!enable) {
-      _update(_state.copyWith(
-        isSimulation: false,
-        connectionHealth: ConnectionHealth.disconnected,
-        connectionLabel: 'Belum Terhubung',
-      ));
+      _update(
+        _state.copyWith(
+          isSimulation: false,
+          connectionHealth: ConnectionHealth.disconnected,
+          connectionLabel: 'Belum Terhubung',
+        ),
+      );
       return;
     }
 
     _reconnectTimer?.cancel();
     _service.disconnect();
-    _update(_state.copyWith(
-      isSimulation: true,
-      connectionHealth: ConnectionHealth.simulation,
-      connectionLabel: 'Mode Simulasi Aktif',
-      temperature: 26.4,
-      humidity: 44.5,
-      soilMoisture: 42.0,
-      waterLevel: 61.0,
-      pumpMode: 'AUTO',
-      irrigationPumpOn: false,
-    ));
+    _update(
+      _state.copyWith(
+        isSimulation: true,
+        connectionHealth: ConnectionHealth.simulation,
+        connectionLabel: 'Mode Simulasi Aktif',
+        temperature: 26.4,
+        humidity: 44.5,
+        soilMoisture: 42.0,
+        waterLevel: 61.0,
+        pumpMode: 'AUTO',
+        irrigationPumpOn: false,
+      ),
+    );
 
     _demoTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       var soil = _state.soilMoisture;
@@ -197,25 +224,24 @@ class IrrigationController extends ChangeNotifier {
           pumpOn: pumpOn,
         ),
         ..._state.logs,
-      ].take(12).toList();
+      ].take(30).toList();
 
-      _update(_state.copyWith(
-        temperature: temp,
-        humidity: hum,
-        soilMoisture: soil,
-        waterLevel: water,
-        irrigationPumpOn: pumpOn,
-        pumpActiveSec: activeSec,
-        logs: nextLogs,
-      ));
+      _update(
+        _state.copyWith(
+          temperature: temp,
+          humidity: hum,
+          soilMoisture: soil,
+          waterLevel: water,
+          irrigationPumpOn: pumpOn,
+          pumpActiveSec: activeSec,
+          logs: nextLogs,
+        ),
+      );
     });
   }
 
   void updateLocalThresholds({double? soil, double? tank}) {
-    _update(_state.copyWith(
-      soilThreshold: soil,
-      tankThreshold: tank,
-    ));
+    _update(_state.copyWith(soilThreshold: soil, tankThreshold: tank));
   }
 
   Future<void> setPumpMode(String baseUrl, String command) async {
@@ -223,13 +249,13 @@ class IrrigationController extends ChangeNotifier {
       final mode = command == 'on'
           ? 'MANUAL_ON'
           : command == 'off'
-              ? 'MANUAL_OFF'
-              : 'AUTO';
+          ? 'MANUAL_OFF'
+          : 'AUTO';
       final pumpOn = command == 'on'
           ? true
           : command == 'off'
-              ? false
-              : _state.soilMoisture < _state.soilThreshold;
+          ? false
+          : _state.soilMoisture < _state.soilThreshold;
       _update(_state.copyWith(pumpMode: mode, irrigationPumpOn: pumpOn));
       return;
     }
@@ -238,8 +264,8 @@ class IrrigationController extends ChangeNotifier {
       final mode = command == 'on'
           ? 'MANUAL_ON'
           : command == 'off'
-              ? 'MANUAL_OFF'
-              : 'AUTO';
+          ? 'MANUAL_OFF'
+          : 'AUTO';
       await _service.patchFirebaseControl(baseUrl, {'pump_mode': mode});
       _update(_state.copyWith(pumpMode: mode));
       return;
@@ -252,9 +278,11 @@ class IrrigationController extends ChangeNotifier {
   Future<void> saveThresholds(String baseUrl) async {
     if (_state.isSimulation) {
       if (_state.pumpMode == 'AUTO') {
-        _update(_state.copyWith(
-          irrigationPumpOn: _state.soilMoisture < _state.soilThreshold,
-        ));
+        _update(
+          _state.copyWith(
+            irrigationPumpOn: _state.soilMoisture < _state.soilThreshold,
+          ),
+        );
       }
       return;
     }

@@ -1,13 +1,20 @@
+import 'dart:math' as math;
+
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../controllers/irrigation_controller.dart';
 import '../models/irrigation_state.dart';
 import '../theme/app_palette.dart';
+import '../widgets/charts.dart';
 import '../widgets/connection_card.dart';
 import '../widgets/pump_control_card.dart';
 import '../widgets/sensor_grid.dart';
 import '../widgets/sensor_log_card.dart';
+import '../widgets/sensor_meta.dart';
+import '../widgets/soil_hero_card.dart';
 import '../widgets/threshold_card.dart';
+import '../widgets/ui_kit.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -30,38 +37,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _handlePumpCommand(String command) async {
     try {
       await _controller.setPumpMode(_ipController.text, command);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal mengirim perintah pompa: $e')),
-        );
-      }
+      _toast('Gagal mengirim perintah pompa: $e');
     }
   }
 
   Future<void> _handleSaveThresholds() async {
     try {
       await _controller.saveThresholds(_ipController.text);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _controller.state.isSimulation
-                  ? 'Ambang batas diperbarui (Simulasi)'
-                  : 'Ambang batas disimpan ke ESP32',
-            ),
-          ),
-        );
-      }
+      _toast(
+        _controller.state.isSimulation
+            ? 'Ambang batas diperbarui (Simulasi)'
+            : 'Ambang batas disimpan ke ESP32',
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menyimpan ambang batas: $e')),
-        );
-      }
+      _toast('Gagal menyimpan ambang batas: $e');
     }
   }
 
@@ -69,8 +69,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _controller.setConnectionMode(mode);
     if (mode == ConnectionMode.firebase &&
         _ipController.text.contains('192.168.')) {
-      _ipController.text =
-          'https://NAMA-PROJECT-default-rtdb.asia-southeast1.firebasedatabase.app';
+      _ipController.text = 'https://NAMA-PROJECT-default-rtdb.asia-southeast1.firebasedatabase.app';
     } else if (mode == ConnectionMode.local &&
         _ipController.text.contains('firebasedatabase')) {
       _ipController.text = 'http://192.168.137.10';
@@ -83,7 +82,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       isScrollControlled: true,
       backgroundColor: AppPalette.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (sheetContext) {
         return ListenableBuilder(
@@ -100,15 +99,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: AppPalette.border,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
+                  const SheetHandle(),
                   ConnectionCard(
                     ipController: _ipController,
                     mode: state.connectionMode,
@@ -129,97 +120,139 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  void _openSensorSheet(SensorKind kind) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppPalette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => ListenableBuilder(
+        listenable: _controller,
+        builder: (context, _) =>
+            _SensorDetailSheet(kind: kind, state: _controller.state),
+      ),
+    );
+  }
+
+  List<Widget> _tabChildren(IrrigationState state) {
+    switch (_activeTab) {
+      case 0:
+        return [
+          CompactConnectionBar(
+            endpoint: _ipController.text,
+            mode: state.connectionMode,
+            health: state.connectionHealth,
+            statusLabel: state.connectionLabel,
+            onEditTap: _openConnectionSheet,
+            onConnect: () => _controller.connect(_ipController.text),
+          ),
+          const SizedBox(height: 12),
+          SoilHeroCard(
+            state: state,
+            onTap: () => _openSensorSheet(SensorKind.soil),
+            onConnect: _openConnectionSheet,
+            onSimulate: () => _controller.toggleSimulation(true),
+          ),
+          const SizedBox(height: 12),
+          SensorGrid(state: state, onOpen: _openSensorSheet),
+          const SizedBox(height: 12),
+          PumpControlCard(
+            pumpMode: state.pumpMode,
+            pumpOn: state.irrigationPumpOn,
+            pumpActiveSec: state.pumpActiveSec,
+            onCommand: _handlePumpCommand,
+          ),
+        ];
+      case 1:
+        return [
+          ThresholdCard(
+            soilThreshold: state.soilThreshold,
+            tankThreshold: state.tankThreshold,
+            soilMoisture: state.soilMoisture,
+            waterLevel: state.waterLevel,
+            live: state.isLive,
+            onSoilChanged: (v) => _controller.updateLocalThresholds(soil: v),
+            onTankChanged: (v) => _controller.updateLocalThresholds(tank: v),
+            onSave: _handleSaveThresholds,
+          ),
+        ];
+      default:
+        return [SensorLogCard(state: state)];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: _controller,
-      builder: (context, _) {
-        final state = _controller.state;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: ListenableBuilder(
+        listenable: _controller,
+        builder: (context, _) {
+          final state = _controller.state;
 
-        return Scaffold(
-          backgroundColor: AppPalette.primary,
-          body: SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                _DashboardHeader(
-                  state: state,
-                  onToggleSimulation: _controller.toggleSimulation,
+          return Scaffold(
+            backgroundColor: AppPalette.background,
+            body: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(-0.9, -1.1),
+                  radius: 1.1,
+                  colors: [Color(0xFF1F2466), AppPalette.background],
                 ),
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      color: AppPalette.background,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(28),
-                      ),
+              ),
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    _DashboardHeader(
+                      state: state,
+                      onToggleSimulation: _controller.toggleSimulation,
                     ),
-                    child: Column(
-                      children: [
-                        _SheetTabBar(
-                          activeTab: _activeTab,
-                          logCount: state.logs.length,
-                          onTabSelected: (index) {
-                            setState(() => _activeTab = index);
-                          },
-                        ),
-                        Expanded(
-                          child: ListView(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                            children: [
-                              if (state.isTankLow) ...[
-                                const _TankLowBanner(),
-                                const SizedBox(height: 10),
-                              ],
-                              if (_activeTab == 0) ...[
-                                CompactConnectionBar(
-                                  endpoint: _ipController.text,
-                                  mode: state.connectionMode,
-                                  health: state.connectionHealth,
-                                  statusLabel: state.connectionLabel,
-                                  onEditTap: _openConnectionSheet,
-                                  onConnect: () =>
-                                      _controller.connect(_ipController.text),
-                                ),
-                                const SizedBox(height: 10),
-                                SensorGrid(state: state),
-                                const SizedBox(height: 10),
-                                PumpControlCard(
-                                  pumpMode: state.pumpMode,
-                                  pumpOn: state.irrigationPumpOn,
-                                  pumpActiveSec: state.pumpActiveSec,
-                                  onCommand: _handlePumpCommand,
-                                ),
-                              ] else ...[
-                                ThresholdCard(
-                                  soilThreshold: state.soilThreshold,
-                                  tankThreshold: state.tankThreshold,
-                                  onSoilChanged: (v) =>
-                                      _controller.updateLocalThresholds(
-                                        soil: v,
-                                      ),
-                                  onTankChanged: (v) =>
-                                      _controller.updateLocalThresholds(
-                                        tank: v,
-                                      ),
-                                  onSave: _handleSaveThresholds,
-                                ),
-                                const SizedBox(height: 12),
-                                SensorLogCard(logs: state.logs),
-                              ],
-                            ],
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.topCenter,
+                      child: state.isTankLow
+                          ? const Padding(
+                              padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+                              child: _TankLowBanner(),
+                            )
+                          : const SizedBox(width: double.infinity),
+                    ),
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 280),
+                        switchInCurve: Curves.easeOutCubic,
+                        transitionBuilder: (child, anim) => FadeTransition(
+                          opacity: anim,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0, 0.03),
+                              end: Offset.zero,
+                            ).animate(anim),
+                            child: child,
                           ),
                         ),
-                      ],
+                        child: ListView(
+                          key: ValueKey(_activeTab),
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                          children: _tabChildren(state),
+                        ),
+                      ),
                     ),
-                  ),
+                    _NavBar(
+                      index: _activeTab,
+                      logCount: state.logs.length,
+                      onSelect: (i) => setState(() => _activeTab = i),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -240,142 +273,118 @@ class _DashboardHeader extends StatelessWidget {
         : (state.connectionMode == ConnectionMode.firebase
               ? 'Firebase RTDB'
               : 'ESP32 Lokal');
+    final statusColor = connectionColor(state.connectionHealth);
+    final sim = state.isSimulation;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.eco_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 7),
-                  Text(
-                    modeText,
-                    style: const TextStyle(
-                      color: Color(0xFFD9DDFB),
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.only(left: 10, right: 4),
-                decoration: BoxDecoration(
-                  color: AppPalette.headerOverlay,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: AppPalette.headerBorder),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppPalette.border, width: 1.2),
+              boxShadow: [
+                BoxShadow(
+                  color: AppPalette.primary.withValues(alpha: 0.35),
+                  blurRadius: 18,
+                  spreadRadius: -4,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(13),
+              child: Image.asset('assets/icon/app_icon.png', fit: BoxFit.cover),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Smart Irrigation Monitor',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppPalette.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Row(
                   children: [
-                    const Text(
-                      'Simulasi',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    SizedBox(
-                      height: 28,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Switch(
-                          value: state.isSimulation,
-                          activeThumbColor: Colors.white,
-                          activeTrackColor: AppPalette.mint,
-                          inactiveThumbColor: Colors.white,
-                          inactiveTrackColor: Colors.white24,
-                          onChanged: onToggleSimulation,
+                    PulseDot(color: statusColor, size: 6, active: state.isLive),
+                    const SizedBox(width: 3),
+                    Flexible(
+                      child: Text(
+                        modeText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppPalette.textSecondary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
+          const SizedBox(width: 10),
+          Semantics(
+            toggled: sim,
+            label: 'Mode simulasi',
+            child: Pressable(
+              onTap: () => onToggleSimulation(!sim),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 13),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(11),
-                  border: Border.all(color: Colors.white38, width: 1.2),
+                  color: sim ? AppPalette.primary : AppPalette.surface,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: sim ? AppPalette.primary : AppPalette.border,
+                  ),
                   boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.14),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
+                    if (sim)
+                      BoxShadow(
+                        color: AppPalette.primary.withValues(alpha: 0.45),
+                        blurRadius: 18,
+                        spreadRadius: -4,
+                      ),
                   ],
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(
-                    'assets/icon/app_icon.png',
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 11),
-              const Expanded(
-                child: Text(
-                  'Smart Irrigation Monitor',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      state.irrigationPumpOn ? 'ON' : 'OFF',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: state.irrigationPumpOn
-                            ? AppPalette.mint
-                            : AppPalette.primary,
-                      ),
+                    Icon(
+                      sim ? Icons.science_rounded : Icons.science_outlined,
+                      size: 17,
+                      color: sim ? AppPalette.onAccent : AppPalette.textPrimary,
                     ),
-                    const Text(
-                      'Pompa',
+                    const SizedBox(width: 6),
+                    Text(
+                      'Simulasi',
                       style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: AppPalette.textSecondary,
+                        color: sim
+                            ? AppPalette.onAccent
+                            : AppPalette.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
         ],
       ),
@@ -383,42 +392,54 @@ class _DashboardHeader extends StatelessWidget {
   }
 }
 
-class _SheetTabBar extends StatelessWidget {
-  final int activeTab;
+class _NavBar extends StatelessWidget {
+  final int index;
   final int logCount;
-  final ValueChanged<int> onTabSelected;
+  final ValueChanged<int> onSelect;
 
-  const _SheetTabBar({
-    required this.activeTab,
+  const _NavBar({
+    required this.index,
     required this.logCount,
-    required this.onTabSelected,
+    required this.onSelect,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
         color: AppPalette.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        border: Border(bottom: BorderSide(color: AppPalette.border)),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: AppPalette.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
       child: Row(
         children: [
-          Expanded(
-            child: _SheetTabItem(
-              label: 'Monitoring',
-              selected: activeTab == 0,
-              onTap: () => onTabSelected(0),
-            ),
+          _NavItem(
+            icon: Icons.dashboard_rounded,
+            label: 'Monitoring',
+            selected: index == 0,
+            onTap: () => onSelect(0),
           ),
-          Expanded(
-            child: _SheetTabItem(
-              label: 'Kalibrasi & Log',
-              badgeCount: logCount,
-              selected: activeTab == 1,
-              onTap: () => onTabSelected(1),
-            ),
+          _NavItem(
+            icon: Icons.tune_rounded,
+            label: 'Kalibrasi',
+            selected: index == 1,
+            onTap: () => onSelect(1),
+          ),
+          _NavItem(
+            icon: Icons.insights_rounded,
+            label: 'Riwayat',
+            badge: logCount,
+            selected: index == 2,
+            onTap: () => onSelect(2),
           ),
         ],
       ),
@@ -426,63 +447,73 @@ class _SheetTabBar extends StatelessWidget {
   }
 }
 
-class _SheetTabItem extends StatelessWidget {
+class _NavItem extends StatelessWidget {
+  final IconData icon;
   final String label;
-  final int? badgeCount;
+  final int? badge;
   final bool selected;
   final VoidCallback onTap;
 
-  const _SheetTabItem({
+  const _NavItem({
+    required this.icon,
     required this.label,
     required this.selected,
     required this.onTap,
-    this.badgeCount,
+    this.badge,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
+    final fg = selected ? AppPalette.onAccent : AppPalette.textSecondary;
+    final count = badge;
+    return Expanded(
+      flex: selected ? 14 : 10,
+      child: Semantics(
+        selected: selected,
+        child: Pressable(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+            height: 48,
+            decoration: BoxDecoration(
+              color: selected ? AppPalette.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(20),
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                    color: selected
-                        ? AppPalette.textPrimary
-                        : AppPalette.textMuted,
+                Icon(icon, size: 20, color: fg),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
                   ),
                 ),
-                if (badgeCount != null) ...[
-                  const SizedBox(width: 6),
+                if (count != null && count > 0 && !selected) ...[
+                  const SizedBox(width: 5),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 2,
+                      horizontal: 6,
+                      vertical: 1,
                     ),
                     decoration: BoxDecoration(
-                      color: selected
-                          ? AppPalette.primarySoft
-                          : AppPalette.background,
+                      color: AppPalette.primarySoft,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      '$badgeCount',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: selected
-                            ? AppPalette.primary
-                            : AppPalette.textMuted,
+                      '$count',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppPalette.primary,
                       ),
                     ),
                   ),
@@ -490,16 +521,7 @@ class _SheetTabItem extends StatelessWidget {
               ],
             ),
           ),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            height: 2.5,
-            width: selected ? 84 : 0,
-            decoration: BoxDecoration(
-              color: AppPalette.primary,
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -511,27 +533,190 @@ class _TankLowBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(8, 10, 14, 10),
       decoration: BoxDecoration(
         color: AppPalette.coralSoft,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.coral.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppPalette.coral.withValues(alpha: 0.5)),
       ),
       child: const Row(
         children: [
-          Icon(Icons.warning_amber_rounded, color: AppPalette.coral),
-          SizedBox(width: 10),
+          PulseDot(color: AppPalette.coral, size: 9),
+          SizedBox(width: 6),
           Expanded(
             child: Text(
-              'PERINGATAN: Level air tangki di bawah ambang batas! Segera isi ulang.',
+              'PERINGATAN: Level air tangki di bawah ambang batas! Segera '
+              'isi ulang.',
               style: TextStyle(
                 color: AppPalette.coral,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+                height: 1.3,
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Detail satu sensor: nilai sekarang, grafik interaktif, min/rata-rata/maks.
+class _SensorDetailSheet extends StatelessWidget {
+  final SensorKind kind;
+  final IrrigationState state;
+
+  const _SensorDetailSheet({required this.kind, required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final values = seriesOf(state.logs, kind);
+    final has = values.isNotEmpty;
+    final lo = has ? values.reduce(math.min) : 0.0;
+    final hi = has ? values.reduce(math.max) : 0.0;
+    final avg = has ? values.reduce((a, b) => a + b) / values.length : 0.0;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SheetHandle(),
+            Row(
+              children: [
+                IconBadge(icon: kind.icon, color: kind.color, size: 44),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        kind.label,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppPalette.textSecondary,
+                        ),
+                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          AnimatedNumber(
+                            value: kind.current(state),
+                            placeholder: !state.isLive,
+                            style: const TextStyle(
+                              fontSize: 30,
+                              height: 1.1,
+                              fontWeight: FontWeight.w800,
+                              color: AppPalette.textPrimary,
+                              letterSpacing: -0.6,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            kind.unit,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppPalette.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  tooltip: 'Tutup',
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: AppPalette.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            HistoryChart(
+              values: values,
+              times: timesOf(state.logs),
+              color: kind.color,
+              unit: kind.unit,
+              threshold: kind.threshold(state),
+              height: 200,
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                _Stat(label: 'Min', value: lo, unit: kind.unit, has: has),
+                const SizedBox(width: 8),
+                _Stat(
+                  label: 'Rata-rata',
+                  value: avg,
+                  unit: kind.unit,
+                  has: has,
+                ),
+                const SizedBox(width: 8),
+                _Stat(label: 'Maks', value: hi, unit: kind.unit, has: has),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  final String label;
+  final double value;
+  final String unit;
+  final bool has;
+
+  const _Stat({
+    required this.label,
+    required this.value,
+    required this.unit,
+    required this.has,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppPalette.background,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppPalette.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: AppPalette.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              has ? '${value.toStringAsFixed(1)}$unit' : '--',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: AppPalette.textPrimary,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

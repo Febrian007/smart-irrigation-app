@@ -16,7 +16,13 @@ class SensorLogEntry {
   });
 }
 
-enum ConnectionHealth { disconnected, connecting, connected, reconnecting, simulation }
+enum ConnectionHealth {
+  disconnected,
+  connecting,
+  connected,
+  reconnecting,
+  simulation,
+}
 
 enum ConnectionMode { local, firebase }
 
@@ -53,9 +59,11 @@ class IrrigationState {
     this.logs = const [],
   });
 
-  bool get isTankLow =>
-      waterLevel < tankThreshold &&
-      (isSimulation || connectionHealth == ConnectionHealth.connected);
+  /// Ada data sensor yang sedang mengalir (terhubung atau simulasi).
+  bool get isLive =>
+      isSimulation || connectionHealth == ConnectionHealth.connected;
+
+  bool get isTankLow => waterLevel < tankThreshold && isLive;
 
   IrrigationState copyWith({
     double? temperature,
@@ -91,7 +99,10 @@ class IrrigationState {
     );
   }
 
-  IrrigationState mergeFromJson(Map<String, dynamic> map, {bool addLog = false}) {
+  IrrigationState mergeFromJson(
+    Map<String, dynamic> map, {
+    bool addLog = false,
+  }) {
     final nextTemp = (map['temperature'] as num?)?.toDouble() ?? temperature;
     final nextHum = (map['humidity'] as num?)?.toDouble() ?? humidity;
     final nextSoil = (map['soil_moisture'] as num?)?.toDouble() ?? soilMoisture;
@@ -110,7 +121,7 @@ class IrrigationState {
           pumpOn: nextPumpOn,
         ),
         ...logs,
-      ].take(12).toList();
+      ].take(30).toList();
     }
 
     return copyWith(
@@ -121,8 +132,10 @@ class IrrigationState {
       pumpMode: (map['pump_mode'] as String?) ?? pumpMode,
       irrigationPumpOn: nextPumpOn,
       pumpActiveSec: (map['pump_active_sec'] as num?)?.toInt() ?? pumpActiveSec,
-      soilThreshold: (map['soil_threshold'] as num?)?.toDouble() ?? soilThreshold,
-      tankThreshold: (map['tank_threshold'] as num?)?.toDouble() ?? tankThreshold,
+      soilThreshold:
+          (map['soil_threshold'] as num?)?.toDouble() ?? soilThreshold,
+      tankThreshold:
+          (map['tank_threshold'] as num?)?.toDouble() ?? tankThreshold,
       logs: nextLogs,
     );
   }

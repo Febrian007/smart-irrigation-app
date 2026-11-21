@@ -2,171 +2,250 @@ import 'package:material_ui/material_ui.dart';
 
 import '../models/irrigation_state.dart';
 import '../theme/app_palette.dart';
+import 'charts.dart';
+import 'sensor_meta.dart';
+import 'ui_kit.dart';
 
-class SensorLogCard extends StatelessWidget {
-  final List<SensorLogEntry> logs;
+/// Grafik riwayat (pilih sensor lewat chip) + daftar pembacaan terbaru.
+class SensorLogCard extends StatefulWidget {
+  final IrrigationState state;
 
-  const SensorLogCard({super.key, required this.logs});
+  const SensorLogCard({super.key, required this.state});
+
+  @override
+  State<SensorLogCard> createState() => _SensorLogCardState();
+}
+
+class _SensorLogCardState extends State<SensorLogCard> {
+  SensorKind _kind = SensorKind.soil;
 
   @override
   Widget build(BuildContext context) {
+    final state = widget.state;
+    final logs = state.logs;
     final visibleLogs = logs.take(8).toList();
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppPalette.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppPalette.border),
-        boxShadow: [
-          BoxShadow(
-            color: AppPalette.primary.withValues(alpha: 0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Column(
+      children: [
+        AppCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: AppPalette.primarySoft,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.history_rounded,
-                  color: AppPalette.primary,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'Riwayat Pembacaan Terbaru',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                    color: AppPalette.textPrimary,
+              Row(
+                children: [
+                  IconBadge(icon: Icons.show_chart_rounded, color: _kind.color),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Grafik Riwayat',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: AppPalette.textPrimary,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppPalette.background,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: AppPalette.border),
-                ),
-                child: Text(
-                  '${logs.length}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+                  StatusPill(
+                    label: '${logs.length} data',
                     color: AppPalette.textSecondary,
+                    showDot: false,
                   ),
-                ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  for (final k in SensorKind.values) ...[
+                    Expanded(
+                      child: _KindChip(
+                        kind: k,
+                        selected: k == _kind,
+                        onTap: () => setState(() => _kind = k),
+                      ),
+                    ),
+                    if (k != SensorKind.values.last) const SizedBox(width: 6),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 14),
+              HistoryChart(
+                values: seriesOf(logs, _kind),
+                times: timesOf(logs),
+                color: _kind.color,
+                unit: _kind.unit,
+                threshold: _kind.threshold(state),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          if (visibleLogs.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppPalette.background,
-                borderRadius: BorderRadius.circular(12),
+        ),
+        const SizedBox(height: 12),
+        AppCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  IconBadge(
+                    icon: Icons.history_rounded,
+                    color: AppPalette.primary,
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Riwayat Pembacaan Terbaru',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: AppPalette.textPrimary,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: const Text(
-                'Belum ada data. Hubungkan ESP32 atau aktifkan Mode Simulasi.',
+              const SizedBox(height: 12),
+              if (visibleLogs.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppPalette.background,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Text(
+                    'Belum ada data. Hubungkan ESP32 atau aktifkan Mode '
+                    'Simulasi.',
+                    style: TextStyle(
+                      color: AppPalette.textSecondary,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                )
+              else
+                for (var i = 0; i < visibleLogs.length; i++) ...[
+                  if (i > 0)
+                    const Divider(height: 18, color: AppPalette.divider),
+                  _LogRow(entry: visibleLogs[i], latest: i == 0),
+                ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _KindChip extends StatelessWidget {
+  final SensorKind kind;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _KindChip({
+    required this.kind,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = selected ? AppPalette.onAccent : AppPalette.textSecondary;
+    return Pressable(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        height: 44,
+        decoration: BoxDecoration(
+          color: selected ? kind.color : AppPalette.background,
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: selected ? kind.color : AppPalette.border),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(kind.icon, size: 15, color: fg),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                kind.shortLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: AppPalette.textSecondary,
-                  fontSize: 12,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: fg,
                 ),
               ),
-            )
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: visibleLogs.length,
-              separatorBuilder: (_, _) =>
-                  const Divider(height: 14, color: AppPalette.divider),
-              itemBuilder: (context, index) {
-                final e = visibleLogs[index];
-                final t =
-                    '${e.time.hour.toString().padLeft(2, '0')}:'
-                    '${e.time.minute.toString().padLeft(2, '0')}:'
-                    '${e.time.second.toString().padLeft(2, '0')}';
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-                return Row(
+class _LogRow extends StatelessWidget {
+  final SensorLogEntry entry;
+  final bool latest;
+
+  const _LogRow({required this.entry, required this.latest});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: latest ? AppPalette.primarySoft : AppPalette.background,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Text(
+            formatClock(entry.time),
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: latest ? AppPalette.primary : AppPalette.textSecondary,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 4,
+            children: [
+              for (final k in SensorKind.values)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppPalette.primarySoft,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        t,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppPalette.primary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Suhu ${e.temperature.toStringAsFixed(1)}°C · '
-                        'RH ${e.humidity.toStringAsFixed(1)}% · '
-                        'Tanah ${e.soilMoisture.toStringAsFixed(1)}% · '
-                        'Air ${e.waterLevel.toStringAsFixed(1)}%',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppPalette.textPrimary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: e.pumpOn
-                            ? AppPalette.mintSoft
-                            : AppPalette.background,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        e.pumpOn ? 'ON' : 'OFF',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: e.pumpOn
-                              ? AppPalette.mint
-                              : AppPalette.textMuted,
-                        ),
+                    Icon(k.icon, size: 13, color: k.color),
+                    const SizedBox(width: 3),
+                    Text(
+                      '${k.read(entry).toStringAsFixed(1)}${k.unit}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppPalette.textPrimary,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: [FontFeature.tabularFigures()],
                       ),
                     ),
                   ],
-                );
-              },
-            ),
-        ],
-      ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        StatusPill(
+          label: entry.pumpOn ? 'ON' : 'OFF',
+          color: entry.pumpOn ? AppPalette.mint : AppPalette.textMuted,
+          showDot: false,
+        ),
+      ],
     );
   }
 }
